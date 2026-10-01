@@ -170,3 +170,17 @@ class LogAcceso(Base):
     
     # Relaciones
     usuario = relationship("Usuario", back_populates="logs_acceso")
+
+
+class MensajeProfesor(Base):
+    __tablename__ = "mensajes_profesor"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    profesor_id = Column(Integer, ForeignKey("profesores.id"), nullable=False)
+    titulo = Column(String, nullable=False)
+    contenido = Column(Text, nullable=False)
+    tipo = Column(String, default="general")
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    activo = Column(Boolean, default=True)
+    
+    profesor = relationship("Profesor", back_populates="mensajes")
