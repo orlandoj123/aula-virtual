@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from app.database import init_db
-from app.routers import auth, estudiantes
+from app.routers import auth, estudiantes, archivos, modulos, actividades, entregas, admin
 import os
 
 # Inicializar BD
@@ -13,23 +15,40 @@ app = FastAPI(
     description="API para plataforma de educación virtual"
 )
 
-# CORS: permitir solicitudes desde el frontend
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Servir frontend estático
+if os.path.exists("../frontend"):
+    app.mount("/static", StaticFiles(directory="../frontend"), name="static")
+
 # Incluir routers
 app.include_router(auth.router)
 app.include_router(estudiantes.router)
+app.include_router(archivos.router)
+app.include_router(modulos.router)
+app.include_router(actividades.router)
+app.include_router(entregas.router)
+app.include_router(admin.router)
 
-# Rutas simples
+# Rutas frontend
 @app.get("/")
 async def root():
-    return {"message": "Bienvenido a Aula Virtual API", "version": "0.1.0"}
+    return FileResponse("../frontend/index.html")
+
+@app.get("/login")
+async def login_page():
+    return FileResponse("../frontend/login.html")
+
+@app.get("/dashboard")
+async def dashboard_page():
+    return FileResponse("../frontend/dashboard.html")
 
 @app.get("/api/health")
 async def health():
