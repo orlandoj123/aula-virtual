@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Aula - Aula Virtual</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        .banner-advertencia {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .banner-advertencia h2 { font-size: 24px; margin-bottom: 10px; }
+        .banner-advertencia p { margin: 10px 0; font-size: 16px; }
+        .btn-contactar { background-color: white; color: #f5576c; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-contactar:hover { transform: scale(1.05); }
+        
+        .modulo-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 15px; cursor: pointer; }
+        .modulo-card:hover { transform: translateY(-5px); }
+        
+        .actividad-item { background: #f9f9f9; padding: 15px; border-left: 4px solid #667eea; margin-bottom: 10px; border-radius: 4px; }
+        .guia-item { background: #f9f9f9; padding: 15px; margin-bottom: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎓 Mi Aula Virtual</h1>
+            <nav>
+                <span id="user-info"></span>
+                <button onclick="logout()">Cerrar Sesión</button>
+            </nav>
+        </header>
+        
+        <main>
+            <div id="banner-sin-suscripcion" class="banner-advertencia" style="display:none">
+                <h2 id="banner-titulo">Suscripción Requerida</h2>
+                <p id="banner-contenido">Contacta al profesor para obtener acceso</p>
+                <button class="btn-contactar" onclick="alert('Contacta al profesor para obtener acceso a los contenidos')">Contactar Profesor</button>
+            </div>
+            
+            <div id="contenido-principal">
+                <div id="modulos-lista"></div>
+                <div id="modulo-detalle" style="display:none">
+                    <button onclick="volver()" class="btn">← Volver a Módulos</button>
+                    <div id="contenido-modulo"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="/static/js/api.js"></script>
+    <script>
+        const token = localStorage.getItem('token');
+        const rol = localStorage.getItem('rol');
+        
+        if (!token || rol !== 'estudiante') window.location.href = '/login';
+        
+        async function cargarPerfil() {
+            try {
+                const response = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                document.getElementById('user-info').textContent = data.nombre_completo;
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+        
+        async function verificarSuscripcion() {
+            try {
+                const response = await fetch('/api/estudiantes/verificar-acceso', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                if (!data.tiene_acceso) {
+                    // Obtener mensaje personalizado del profesor
+                    try {
+                        const msgRes = await fetch('/api/estudiantes/me/suscripcion', {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const msgData = await msgRes.json();
+                        
+                        // Mostrar banner
+                        document.getElementById('banner-sin-suscripcion').style.display = 'block';
+                        document.getElementById('banner-titulo').textContent = 'Sin Suscripción Activa';
+                        document.getElementById('banner-contenido').textContent = 'Debes renovar tu suscripción para acceder a los contenidos';
+                        
+                        // Ocultar módulos
+                        document.getElementById('modulos-lista').style.display = 'none';
+                    } catch (error) {
+                        console.error('Error:', error);
+                    }
+                } else {
+                    cargarModulos();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+        
+        async function cargarModulos() {
+            try {
+                const response = await fetch('/api/modulos/listar', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                let html = '';
+                data.modulos.forEach(m => {
+                    html += `<div class="modulo-card" onclick="verModulo(${m.id})">
+                        <h3>${m.nombre}</h3>
+                        <p>${m.descripcion || 'Sin descripción'}</p>
+                        <small>📚 ${m.guias_count} guías | 📝 ${m.actividades_count} actividades</small>
+                    </div>`;
+                });
+                
+                document.getElementById('modulos-lista').innerHTML = html;
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+        
+        async function verModulo(id) {
+            try {
+                const response = await fetch(`/api/modulos/${id}/completo`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                let html = `<h2>${data.nombre}</h2>`;
+                
+                if (data.guias && data.guias.length > 0) {
+                    html += '<h3>📚 Guías</h3>';
+                    data.guias.forEach(g => {
+                        html += `<div class="guia-item">
+                            <strong>${g.titulo}</strong><br>
+                            <small>${(g.archivo_tamaño_bytes / 1024 / 1024).toFixed(2)} MB</small><br>
+                            <button class="btn-pequeño" onclick="descargarGuia(${g.archivo_id_drive}, '${g.archivo_nombre}')">Descargar</button>
+                        </div>`;
+                    });
+                }
+                
+                if (data.actividades && data.actividades.length > 0) {
+                    html += '<h3>📝 Actividades</h3>';
+                    data.actividades.forEach(a => {
+                        html += `<div class="actividad-item">
+                            <strong>${a.titulo}</strong><br>
+                            ${a.descripcion ? '<p>' + a.descripcion + '</p>' : ''}
+                            <small>Cierra: ${new Date(a.fecha_cierre).toLocaleDateString()}</small><br>
+                            ${a.requiere_entrega ? '<button class="btn-pequeño" onclick="subirEntrega(' + a.id + ')">Subir Entrega</button>' : ''}
+                        </div>`;
+                    });
+                }
+                
+                document.getElementById('contenido-modulo').innerHTML = html;
+                document.getElementById('modulos-lista').style.display = 'none';
+                document.getElementById('modulo-detalle').style.display = 'block';
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+        
+        function volver() {
+            document.getElementById('modulo-detalle').style.display = 'none';
+            document.getElementById('modulos-lista').style.display = 'block';
+        }
+        
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/login';
+        }
+        
+        cargarPerfil();
+        verificarSuscripcion();
+    </script>
+</body>
+</html>

@@ -1,57 +1,51 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Usuario, Modulo, Profesor
+from app.models import Usuario, Modulo, Profesor, Actividad, Guia, Entrega
 from app.dependencies import get_current_profesor, get_current_user
 from datetime import datetime
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/modulos", tags=["modulos"])
 
+class CrearModuloRequest(BaseModel):
+    nombre: str
+    descripcion: str = None
+
 @router.post("/crear")
 async def crear_modulo(
-    nombre: str,
-    descripcion: str = None,
+    datos: CrearModuloRequest,
     current_user: Usuario = Depends(get_current_profesor),
     db: Session = Depends(get_db)
 ):
-    """Crea un nuevo módulo (solo profesores)"""
+    """Crea un módulo"""
     
     profesor = db.query(Profesor).filter(Profesor.usuario_id == current_user.id).first()
-    if not profesor:
-        raise HTTPException(status_code=404, detail="Profesor no encontrado")
-    
-    # Contar módulos del profesor para determinar orden
     cantidad = db.query(Modulo).filter(Modulo.profesor_id == profesor.id).count()
     
     modulo = Modulo(
         profesor_id=profesor.id,
-        nombre=nombre,
-        descripcion=descripcion,
+        nombre=datos.nombre,
+        descripcion=datos.descripcion,
         orden=cantidad + 1
     )
     db.add(modulo)
     db.commit()
     db.refresh(modulo)
     
-    return {
-        "id": modulo.id,
-        "nombre": modulo.nombre,
-        "orden": modulo.orden,
-        "estado": modulo.estado.value
-    }
+    return {"id": modulo.id, "nombre": modulo.nombre}
 
 @router.get("/listar")
 async def listar_modulos(
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Lista todos los módulos del profesor o para el estudiante"""
+    """Lista módulos"""
     
     if current_user.rol.value == "profesor":
         profesor = db.query(Profesor).filter(Profesor.usuario_id == current_user.id).first()
         modulos = db.query(Modulo).filter(Modulo.profesor_id == profesor.id).order_by(Modulo.orden).all()
     else:
-        # Estudiantes ven todos los módulos activos
         modulos = db.query(Modulo).filter(Modulo.estado == "activo").order_by(Modulo.orden).all()
     
     return {
@@ -62,19 +56,20 @@ async def listar_modulos(
                 "nombre": m.nombre,
                 "descripcion": m.descripcion,
                 "estado": m.estado.value,
-                "orden": m.orden
+                "guias_count": len(m.guias),
+                "actividades_count": len(m.actividades)
             }
             for m in modulos
         ]
     }
 
-@router.get("/{modulo_id}")
-async def obtener_modulo(
+@router.get("/{modulo_id}/completo")
+async def obtener_modulo_completo(
     modulo_id: int,
     current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Obtiene detalles de un módulo"""
+    """Obtiene módulo con guías, actividades y entregas"""
     
     modulo = db.query(Modulo).filter(Modulo.id == modulo_id).first()
     if not modulo:
@@ -84,9 +79,26 @@ async def obtener_modulo(
         "id": modulo.id,
         "nombre": modulo.nombre,
         "descripcion": modulo.descripcion,
-        "estado": modulo.estado.value,
-        "orden": modulo.orden,
-        "fecha_creacion": modulo.fecha_creacion
+        "guias": [
+            {
+                "id": g.id,
+                "titulo": g.titulo,
+                "archivo_nombre": g.archivo_nombre,
+                "archivo_tamaño_bytes": g.archivo_tamaño_bytes,
+                "archivo_id_drive": g.archivo_id_drive
+            }
+            for g in modulo.guias
+        ],
+        "actividades": [
+            {
+                "id": a.id,
+                "titulo": a.titulo,
+                "descripcion": a.descripcion,
+                "fecha_cierre": a.fecha_cierre,
+                "requiere_entrega": a.requiere_entrega
+            }
+            for a in modulo.actividades
+        ]
     }
 
 @router.post("/{modulo_id}/cerrar")
@@ -95,18 +107,14 @@ async def cerrar_modulo(
     current_user: Usuario = Depends(get_current_profesor),
     db: Session = Depends(get_db)
 ):
-    """Cierra un módulo (solo profesor propietario)"""
+    """Cierra un módulo"""
     
     modulo = db.query(Modulo).filter(Modulo.id == modulo_id).first()
     if not modulo:
         raise HTTPException(status_code=404, detail="Módulo no encontrado")
     
-    profesor = db.query(Profesor).filter(Profesor.usuario_id == current_user.id).first()
-    if modulo.profesor_id != profesor.id:
-        raise HTTPException(status_code=403, detail="No tienes permiso")
-    
     modulo.estado = "cerrado"
     modulo.fecha_cierre = datetime.utcnow()
     db.commit()
     
-    return {"mensaje": "Módulo cerrado", "modulo_id": modulo.id}
+    return {"mensaje": "Módulo cerrado"}
